@@ -8,7 +8,7 @@ from typing import Any
 
 from src.crawler import SiteCrawler
 from src.indexer import build_index
-from src.search import find_pages, get_word_postings
+from src.search import find_pages, get_word_postings, is_phrase_query
 from src.storage import load_index, save_index
 
 DEFAULT_SITE_URL = "https://quotes.toscrape.com/"
@@ -88,14 +88,15 @@ class SearchShell:
         if not self._ensure_index_loaded():
             return
         if not args:
-            print("Usage: find <query terms>")
+            print('Usage: find <query terms> or find "exact phrase"')
             return
         query = " ".join(args)
         results = find_pages(self.index_data, query)
         if not results:
             print(f"No pages found for query '{query}'.")
             return
-        print(f"Results for '{query}':")
+        query_type = "Phrase" if is_phrase_query(query) else "Keyword"
+        print(f"{query_type} results for '{query}':")
         for result in results:
             print(f"- {result['title']} ({result['url']}) score={result['score']}")
 
@@ -107,7 +108,7 @@ class SearchShell:
 
     @staticmethod
     def print_help() -> None:
-        print("Commands: build, load, print <word>, find <query>, help, exit")
+        print('Commands: build, load, print <word>, find <query>, find "exact phrase", help, exit')
 
 
 def main(argv: list[str] | None = None) -> int:

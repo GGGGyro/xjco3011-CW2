@@ -30,6 +30,7 @@ data/
 - Load a previously saved index
 - Print postings for a single word
 - Find pages that contain all words in a query
+- Support exact phrase searching with double quotes
 - Handle empty queries and missing terms gracefully
 
 ## How to run
@@ -47,6 +48,7 @@ build
 load
 print nonsense
 find good friends
+find "good friends"
 help
 exit
 ```
@@ -58,6 +60,7 @@ python -m src.main build
 python -m src.main load
 python -m src.main print nonsense
 python -m src.main find good friends
+python -m src.main find "\"good friends\""
 ```
 
 ## Testing
