@@ -5,53 +5,29 @@ from __future__ import annotations
 import time
 from collections import deque
 from dataclasses import dataclass
-from html.parser import HTMLParser
 from typing import Callable
-from urllib.error import HTTPError, URLError
 from urllib.parse import urldefrag, urljoin, urlparse
-from urllib.request import Request, urlopen
+
+from src import vendor as _vendor  # noqa: F401
+import requests
+from bs4 import BeautifulSoup
+from requests import Response
+from requests.exceptions import RequestException
 
 from src.models import PageContent
 
 
-class QuoteHTMLParser(HTMLParser):
-    """Extracts page text, title, and links from HTML."""
+def parse_html_document(html: str) -> tuple[str, str, list[str]]:
+    """Parse HTML into a title, visible text, and raw links."""
+    soup = BeautifulSoup(html, "html.parser")
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.links: list[str] = []
-        self.text_parts: list[str] = []
-        self._in_title = False
-        self._skip_depth = 0
-        self.title = ""
+    for element in soup(["script", "style"]):
+        element.decompose()
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in {"script", "style"}:
-            self._skip_depth += 1
-            return
-        if tag == "title":
-            self._in_title = True
-        if tag == "a":
-            for name, value in attrs:
-                if name == "href" and value:
-                    self.links.append(value)
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in {"script", "style"} and self._skip_depth > 0:
-            self._skip_depth -= 1
-            return
-        if tag == "title":
-            self._in_title = False
-
-    def handle_data(self, data: str) -> None:
-        if self._skip_depth > 0:
-            return
-        cleaned = " ".join(data.split())
-        if not cleaned:
-            return
-        if self._in_title:
-            self.title = cleaned
-        self.text_parts.append(cleaned)
+    title = soup.title.get_text(" ", strip=True) if soup.title else ""
+    text = " ".join(soup.get_text(" ", strip=True).split())
+    links = [anchor["href"] for anchor in soup.find_all("a", href=True)]
+    return title, text, links
 
 
 @dataclass(slots=True)
@@ -83,6 +59,8 @@ class Crawler:
         self.time_fn = time_fn or time.monotonic
         self._last_request_time: float | None = None
         self._discovered_urls: set[str] = {self.base_url}
+        self.session = requests.Session()
+        self.session.headers.update({"User-Agent": "XJCO3011 Search Tool"})
 
     def crawl(self) -> CrawlResult:
         """Crawl all reachable in-domain pages starting from base_url."""
@@ -101,7 +79,7 @@ class Crawler:
 
             try:
                 page = self.fetch_page(url)
-            except (HTTPError, URLError, ValueError) as exc:
+            except (RequestException, ValueError) as exc:
                 errors.append(self.format_error(url, exc))
                 continue
 
@@ -123,33 +101,31 @@ class Crawler:
     def fetch_page(self, url: str) -> PageContent:
         """Fetch a page, applying the configured politeness delay first."""
         body = self.fetch_raw_html(url)
-        parser = QuoteHTMLParser()
-        parser.feed(body)
-        text = " ".join(parser.text_parts)
-        title = parser.title or url
-        return PageContent(url=url, title=title, text=text)
+        title, text, _ = parse_html_document(body)
+        return PageContent(url=url, title=title or url, text=text)
 
     def fetch_raw_html(self, url: str) -> str:
         """Fetch raw HTML content while respecting the politeness delay."""
         self._respect_politeness_delay()
-        request = Request(url, headers={"User-Agent": "XJCO3011 Search Tool"})
-        with urlopen(request, timeout=20) as response:
-            body = response.read().decode("utf-8", errors="replace")
+        response = self.fetch_response(url)
         self._last_request_time = self.time_fn()
-        return body
+        return response.text
+
+    def fetch_response(self, url: str) -> Response:
+        """Fetch an HTTP response object and fail on bad status codes."""
+        response = self.session.get(url, timeout=20)
+        response.raise_for_status()
+        return response
 
     def extract_links(self, current_url: str, text: str) -> list[str]:
-        """Re-fetch parsing is avoided in tests; this method is overridden or mocked there."""
+        """Link extraction is overridden or mocked in tests for the base crawler."""
         del current_url
         del text
         return []
 
     def parse_html(self, html: str) -> tuple[str, str, list[str]]:
         """Parse HTML into title, text, and links."""
-        parser = QuoteHTMLParser()
-        parser.feed(html)
-        text = " ".join(parser.text_parts)
-        return parser.title, text, parser.links
+        return parse_html_document(html)
 
     def fetch_page_html(self, url: str) -> tuple[PageContent, list[str]]:
         """Fetch a page and return both parsed page content and discovered links."""
@@ -183,11 +159,11 @@ class Crawler:
     @staticmethod
     def format_error(url: str, exc: Exception) -> str:
         """Create a more informative crawl error message."""
-        if isinstance(exc, HTTPError):
-            return f"{url}: HTTP {exc.code}"
-        if isinstance(exc, URLError):
-            reason = getattr(exc, "reason", exc)
-            return f"{url}: URL error ({reason})"
+        response = getattr(exc, "response", None)
+        if response is not None and getattr(response, "status_code", None) is not None:
+            return f"{url}: HTTP {response.status_code}"
+        if isinstance(exc, RequestException):
+            return f"{url}: Request error ({exc})"
         return f"{url}: {exc}"
 
 
@@ -210,7 +186,7 @@ class SiteCrawler(Crawler):
 
             try:
                 page, links = self.fetch_page_html(url)
-            except (HTTPError, URLError, ValueError) as exc:
+            except (RequestException, ValueError) as exc:
                 errors.append(self.format_error(url, exc))
                 continue
 

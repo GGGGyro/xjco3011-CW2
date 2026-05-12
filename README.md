@@ -1,6 +1,6 @@
 # Coursework 2 Search Tool
 
-This project is a baseline implementation of the COMP/XJCO3011 Coursework 2 search engine tool. It crawls the target website, builds an inverted index, saves and loads that index, and lets the user inspect postings or search for matching pages from a command-line shell.
+This project is a baseline implementation of the COMP/XJCO3011 Coursework 2 search engine tool. It crawls the target website with `requests` and `BeautifulSoup`, builds an inverted index, saves and loads that index, and lets the user inspect postings or search for matching pages from a command-line shell.
 
 ## Project structure
 
@@ -26,6 +26,7 @@ data/
 - Crawl pages starting from `https://quotes.toscrape.com/`
 - Respect a 6-second politeness window between requests
 - Crawl the full site by default, with an optional page limit for local debugging
+- Use the coursework-recommended `requests` + `BeautifulSoup` stack for fetching and parsing pages
 - Build an inverted index containing word frequency and positions per page
 - Save the index to `data/quotes_index.json`
 - Load a previously saved index
@@ -77,8 +78,13 @@ python -m unittest discover -s tests -v
 
 ## Notes
 
-- This baseline uses only the Python standard library so that it can run without third-party dependencies.
-- For a stronger final submission, you can later replace or extend the crawler with `requests` and `BeautifulSoup` as recommended in the brief.
+- Install dependencies with:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+- For this workspace, third-party packages were installed into a local `.vendor/` directory so the project can use them without touching the global Python environment.
 - Search results are ranked with a simple TF-IDF style score based on term frequency, page length, and document frequency.
 - The crawler now reports how many pages were crawled, how many unique URLs were discovered, and any structured network errors.
 - The optional `build [max_pages]` form is intended only for local testing; the default `build` command crawls the full reachable site.

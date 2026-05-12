@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import unittest
-from urllib.error import HTTPError, URLError
+from unittest.mock import Mock
 
-from src.crawler import Crawler, QuoteHTMLParser, SiteCrawler
+from src import vendor as _vendor  # noqa: F401
+from requests import HTTPError
+from requests.exceptions import Timeout
+
+from src.crawler import Crawler, SiteCrawler, parse_html_document
 from src.models import PageContent
 
 
@@ -33,9 +37,8 @@ class StubCrawler(SiteCrawler):
 
 
 class CrawlerTests(unittest.TestCase):
-    def test_html_parser_extracts_title_text_and_links(self) -> None:
-        parser = QuoteHTMLParser()
-        parser.feed(
+    def test_parse_html_document_extracts_title_text_and_links(self) -> None:
+        title, text, links = parse_html_document(
             """
             <html>
               <head><title>Example Page</title></head>
@@ -47,10 +50,10 @@ class CrawlerTests(unittest.TestCase):
             """
         )
 
-        self.assertEqual(parser.title, "Example Page")
-        self.assertIn("/page/2/", parser.links)
-        self.assertIn("Hello", parser.text_parts)
-        self.assertIn("world", parser.text_parts)
+        self.assertEqual(title, "Example Page")
+        self.assertIn("/page/2/", links)
+        self.assertIn("Hello", text)
+        self.assertIn("world", text)
 
     def test_normalise_url_keeps_only_in_domain_links(self) -> None:
         crawler = SiteCrawler("https://quotes.toscrape.com/")
@@ -123,23 +126,32 @@ class CrawlerTests(unittest.TestCase):
         self.assertEqual(page.title, "Mock")
         self.assertIn("Hello", page.text)
 
-    def test_format_error_handles_http_and_url_errors(self) -> None:
-        http_error = HTTPError(
-            "https://quotes.toscrape.com/page/2/",
-            404,
-            "Not Found",
-            hdrs=None,
-            fp=None,
-        )
-        url_error = URLError("timed out")
+    def test_fetch_response_uses_requests_session(self) -> None:
+        crawler = Crawler("https://quotes.toscrape.com/")
+        response = Mock()
+        response.raise_for_status = Mock()
+        response.text = "<html></html>"
+        crawler.session.get = Mock(return_value=response)
+
+        result = crawler.fetch_response("https://quotes.toscrape.com/page/1/")
+
+        crawler.session.get.assert_called_once_with("https://quotes.toscrape.com/page/1/", timeout=20)
+        response.raise_for_status.assert_called_once()
+        self.assertIs(result, response)
+
+    def test_format_error_handles_http_and_request_errors(self) -> None:
+        response = Mock()
+        response.status_code = 404
+        http_error = HTTPError("Not Found", response=response)
+        request_error = Timeout("timed out")
 
         self.assertEqual(
             Crawler.format_error("https://quotes.toscrape.com/page/2/", http_error),
             "https://quotes.toscrape.com/page/2/: HTTP 404",
         )
         self.assertEqual(
-            Crawler.format_error("https://quotes.toscrape.com/page/2/", url_error),
-            "https://quotes.toscrape.com/page/2/: URL error (timed out)",
+            Crawler.format_error("https://quotes.toscrape.com/page/2/", request_error),
+            "https://quotes.toscrape.com/page/2/: Request error (timed out)",
         )
 
 
