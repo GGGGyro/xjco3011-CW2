@@ -98,7 +98,7 @@ class SearchShell:
         query_type = "Phrase" if is_phrase_query(query) else "Keyword"
         print(f"{query_type} results for '{query}':")
         for result in results:
-            print(f"- {result['title']} ({result['url']}) score={result['score']}")
+            print(f"- {result['title']} ({result['url']}) score={result['score']:.4f}")
 
     def _ensure_index_loaded(self) -> bool:
         if self.index_data is None:

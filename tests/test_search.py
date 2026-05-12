@@ -1,10 +1,10 @@
-"""Tests for keyword and phrase query processing."""
+"""Tests for keyword, phrase, and ranking behaviour."""
 
 from __future__ import annotations
 
 import unittest
 
-from src.search import find_pages, get_word_postings, is_phrase_query
+from src.search import calculate_relevance_score, find_pages, get_word_postings, is_phrase_query
 
 
 SAMPLE_INDEX = {
@@ -42,6 +42,7 @@ class SearchTests(unittest.TestCase):
         results = find_pages(SAMPLE_INDEX, "good friends")
         self.assertEqual(len(results), 2)
         self.assertEqual(results[0]["url"], "https://example.com/1")
+        self.assertGreater(results[0]["score"], results[1]["score"])
 
     def test_is_phrase_query_detects_quoted_input(self) -> None:
         self.assertTrue(is_phrase_query('"good friends"'))
@@ -61,6 +62,13 @@ class SearchTests(unittest.TestCase):
 
     def test_find_pages_returns_empty_for_missing_word(self) -> None:
         self.assertEqual(find_pages(SAMPLE_INDEX, "missing"), [])
+
+    def test_calculate_relevance_score_prefers_higher_term_density(self) -> None:
+        score_one = calculate_relevance_score(SAMPLE_INDEX, "https://example.com/1", ["good", "friends"])
+        score_two = calculate_relevance_score(SAMPLE_INDEX, "https://example.com/2", ["good", "friends"])
+
+        self.assertGreater(score_one, score_two)
+        self.assertGreater(score_one, 0.0)
 
 
 if __name__ == "__main__":

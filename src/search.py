@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
@@ -60,16 +61,32 @@ def find_pages(index_data: dict[str, Any], query: str) -> list[dict[str, Any]]:
 
     results = []
     for url in sorted(matching_urls):
-        total_hits = sum(index_data["index"][token][url]["freq"] for token in tokens)
+        relevance_score = calculate_relevance_score(index_data, url, tokens)
         results.append(
             {
                 "url": url,
                 "title": index_data["pages"].get(url, url),
-                "score": total_hits,
+                "score": relevance_score,
             }
         )
 
     return sorted(results, key=lambda item: (-item["score"], item["url"]))
+
+
+def calculate_relevance_score(index_data: dict[str, Any], url: str, tokens: list[str]) -> float:
+    """Score a page using a simple TF-IDF style weighting."""
+    document_count = max(index_data.get("document_count", 0), 1)
+    page_word_count = max(index_data["page_word_counts"].get(url, 0), 1)
+    score = 0.0
+
+    for token in tokens:
+        postings = index_data["index"][token]
+        term_frequency = postings[url]["freq"] / page_word_count
+        document_frequency = len(postings)
+        inverse_document_frequency = math.log((1 + document_count) / (1 + document_frequency)) + 1.0
+        score += term_frequency * inverse_document_frequency
+
+    return round(score, 6)
 
 
 def _page_contains_phrase(index_data: dict[str, Any], url: str, tokens: list[str]) -> bool:

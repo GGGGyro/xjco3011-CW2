@@ -31,6 +31,7 @@ data/
 - Print postings for a single word
 - Find pages that contain all words in a query
 - Support exact phrase searching with double quotes
+- Rank query results with a TF-IDF style relevance score
 - Handle empty queries and missing terms gracefully
 
 ## How to run
@@ -75,3 +76,4 @@ python -m unittest discover -s tests -v
 
 - This baseline uses only the Python standard library so that it can run without third-party dependencies.
 - For a stronger final submission, you can later replace or extend the crawler with `requests` and `BeautifulSoup` as recommended in the brief.
+- Search results are ranked with a simple TF-IDF style score based on term frequency, page length, and document frequency.
