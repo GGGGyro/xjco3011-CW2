@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import unittest
+from urllib.error import HTTPError, URLError
 
-from src.crawler import QuoteHTMLParser, SiteCrawler
+from src.crawler import Crawler, QuoteHTMLParser, SiteCrawler
 from src.models import PageContent
 
 
@@ -81,6 +82,65 @@ class CrawlerTests(unittest.TestCase):
         self.assertEqual(len(result.pages), 2)
         self.assertEqual(result.errors, [])
         self.assertGreaterEqual(clock.current, 6.0)
+        self.assertEqual(result.pages_crawled, 2)
+        self.assertEqual(result.pages_discovered, 2)
+
+    def test_crawl_respects_max_pages_limit(self) -> None:
+        pages = {
+            "https://quotes.toscrape.com/": (
+                PageContent("https://quotes.toscrape.com/", "Home", "alpha beta"),
+                ["/page/2/", "/page/3/"],
+            ),
+            "https://quotes.toscrape.com/page/2/": (
+                PageContent("https://quotes.toscrape.com/page/2/", "Page 2", "beta gamma"),
+                [],
+            ),
+            "https://quotes.toscrape.com/page/3/": (
+                PageContent("https://quotes.toscrape.com/page/3/", "Page 3", "gamma delta"),
+                [],
+            ),
+        }
+        crawler = StubCrawler(pages, max_pages=2)
+
+        result = crawler.crawl()
+
+        self.assertEqual(result.pages_crawled, 2)
+        self.assertEqual(result.pages_discovered, 3)
+
+    def test_fetch_page_uses_fetch_raw_html_hook(self) -> None:
+        class FakeCrawler(Crawler):
+            def __init__(self) -> None:
+                super().__init__("https://quotes.toscrape.com/")
+
+            def fetch_raw_html(self, url: str) -> str:
+                self.captured_url = url
+                return "<html><head><title>Mock</title></head><body>Hello world</body></html>"
+
+        crawler = FakeCrawler()
+        page = crawler.fetch_page("https://quotes.toscrape.com/page/1/")
+
+        self.assertEqual(crawler.captured_url, "https://quotes.toscrape.com/page/1/")
+        self.assertEqual(page.title, "Mock")
+        self.assertIn("Hello", page.text)
+
+    def test_format_error_handles_http_and_url_errors(self) -> None:
+        http_error = HTTPError(
+            "https://quotes.toscrape.com/page/2/",
+            404,
+            "Not Found",
+            hdrs=None,
+            fp=None,
+        )
+        url_error = URLError("timed out")
+
+        self.assertEqual(
+            Crawler.format_error("https://quotes.toscrape.com/page/2/", http_error),
+            "https://quotes.toscrape.com/page/2/: HTTP 404",
+        )
+        self.assertEqual(
+            Crawler.format_error("https://quotes.toscrape.com/page/2/", url_error),
+            "https://quotes.toscrape.com/page/2/: URL error (timed out)",
+        )
 
 
 if __name__ == "__main__":

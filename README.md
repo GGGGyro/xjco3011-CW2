@@ -25,6 +25,7 @@ data/
 
 - Crawl pages starting from `https://quotes.toscrape.com/`
 - Respect a 6-second politeness window between requests
+- Limit a build run to the first 25 crawled pages to keep demonstrations predictable
 - Build an inverted index containing word frequency and positions per page
 - Save the index to `data/quotes_index.json`
 - Load a previously saved index
@@ -77,3 +78,4 @@ python -m unittest discover -s tests -v
 - This baseline uses only the Python standard library so that it can run without third-party dependencies.
 - For a stronger final submission, you can later replace or extend the crawler with `requests` and `BeautifulSoup` as recommended in the brief.
 - Search results are ranked with a simple TF-IDF style score based on term frequency, page length, and document frequency.
+- The crawler now reports how many pages were crawled, how many unique URLs were discovered, and any structured network errors.

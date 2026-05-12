@@ -60,6 +60,8 @@ class CrawlResult:
 
     pages: list[PageContent]
     errors: list[str]
+    pages_crawled: int
+    pages_discovered: int
 
 
 class Crawler:
@@ -69,15 +71,18 @@ class Crawler:
         self,
         base_url: str,
         politeness_delay: float = 6.0,
+        max_pages: int | None = None,
         sleep_fn: Callable[[float], None] | None = None,
         time_fn: Callable[[], float] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/") + "/"
         self.base_netloc = urlparse(self.base_url).netloc
         self.politeness_delay = politeness_delay
+        self.max_pages = max_pages
         self.sleep_fn = sleep_fn or time.sleep
         self.time_fn = time_fn or time.monotonic
         self._last_request_time: float | None = None
+        self._discovered_urls: set[str] = {self.base_url}
 
     def crawl(self) -> CrawlResult:
         """Crawl all reachable in-domain pages starting from base_url."""
@@ -87,6 +92,8 @@ class Crawler:
         errors: list[str] = []
 
         while queue:
+            if self.max_pages is not None and len(pages) >= self.max_pages:
+                break
             url = queue.popleft()
             if url in visited:
                 continue
@@ -95,31 +102,41 @@ class Crawler:
             try:
                 page = self.fetch_page(url)
             except (HTTPError, URLError, ValueError) as exc:
-                errors.append(f"{url}: {exc}")
+                errors.append(self.format_error(url, exc))
                 continue
 
             pages.append(page)
 
             for raw_link in self.extract_links(page.url, page.text):
                 normalised = self.normalise_url(page.url, raw_link)
-                if normalised and normalised not in visited:
+                if normalised and normalised not in self._discovered_urls:
+                    self._discovered_urls.add(normalised)
                     queue.append(normalised)
 
-        return CrawlResult(pages=pages, errors=errors)
+        return CrawlResult(
+            pages=pages,
+            errors=errors,
+            pages_crawled=len(pages),
+            pages_discovered=len(self._discovered_urls),
+        )
 
     def fetch_page(self, url: str) -> PageContent:
         """Fetch a page, applying the configured politeness delay first."""
-        self._respect_politeness_delay()
-        request = Request(url, headers={"User-Agent": "XJCO3011 Search Tool"})
-        with urlopen(request, timeout=20) as response:
-            body = response.read().decode("utf-8", errors="replace")
-        self._last_request_time = self.time_fn()
-
+        body = self.fetch_raw_html(url)
         parser = QuoteHTMLParser()
         parser.feed(body)
         text = " ".join(parser.text_parts)
         title = parser.title or url
         return PageContent(url=url, title=title, text=text)
+
+    def fetch_raw_html(self, url: str) -> str:
+        """Fetch raw HTML content while respecting the politeness delay."""
+        self._respect_politeness_delay()
+        request = Request(url, headers={"User-Agent": "XJCO3011 Search Tool"})
+        with urlopen(request, timeout=20) as response:
+            body = response.read().decode("utf-8", errors="replace")
+        self._last_request_time = self.time_fn()
+        return body
 
     def extract_links(self, current_url: str, text: str) -> list[str]:
         """Re-fetch parsing is avoided in tests; this method is overridden or mocked there."""
@@ -136,12 +153,7 @@ class Crawler:
 
     def fetch_page_html(self, url: str) -> tuple[PageContent, list[str]]:
         """Fetch a page and return both parsed page content and discovered links."""
-        self._respect_politeness_delay()
-        request = Request(url, headers={"User-Agent": "XJCO3011 Search Tool"})
-        with urlopen(request, timeout=20) as response:
-            body = response.read().decode("utf-8", errors="replace")
-        self._last_request_time = self.time_fn()
-
+        body = self.fetch_raw_html(url)
         title, text, links = self.parse_html(body)
         page = PageContent(url=url, title=title or url, text=text)
         return page, links
@@ -168,6 +180,16 @@ class Crawler:
         if remaining > 0:
             self.sleep_fn(remaining)
 
+    @staticmethod
+    def format_error(url: str, exc: Exception) -> str:
+        """Create a more informative crawl error message."""
+        if isinstance(exc, HTTPError):
+            return f"{url}: HTTP {exc.code}"
+        if isinstance(exc, URLError):
+            reason = getattr(exc, "reason", exc)
+            return f"{url}: URL error ({reason})"
+        return f"{url}: {exc}"
+
 
 class SiteCrawler(Crawler):
     """Concrete crawler that follows in-domain links parsed from HTML."""
@@ -179,6 +201,8 @@ class SiteCrawler(Crawler):
         errors: list[str] = []
 
         while queue:
+            if self.max_pages is not None and len(pages) >= self.max_pages:
+                break
             url = queue.popleft()
             if url in visited:
                 continue
@@ -187,14 +211,20 @@ class SiteCrawler(Crawler):
             try:
                 page, links = self.fetch_page_html(url)
             except (HTTPError, URLError, ValueError) as exc:
-                errors.append(f"{url}: {exc}")
+                errors.append(self.format_error(url, exc))
                 continue
 
             pages.append(page)
 
             for raw_link in links:
                 normalised = self.normalise_url(page.url, raw_link)
-                if normalised and normalised not in visited:
+                if normalised and normalised not in self._discovered_urls:
+                    self._discovered_urls.add(normalised)
                     queue.append(normalised)
 
-        return CrawlResult(pages=pages, errors=errors)
+        return CrawlResult(
+            pages=pages,
+            errors=errors,
+            pages_crawled=len(pages),
+            pages_discovered=len(self._discovered_urls),
+        )
