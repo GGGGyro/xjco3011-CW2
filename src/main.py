@@ -13,7 +13,6 @@ from src.storage import load_index, save_index
 
 DEFAULT_SITE_URL = "https://quotes.toscrape.com/"
 DEFAULT_INDEX_PATH = Path("data") / "quotes_index.json"
-DEFAULT_MAX_PAGES = 25
 
 
 class SearchShell:
@@ -34,7 +33,7 @@ class SearchShell:
         args = parts[1:]
 
         if command == "build":
-            self.handle_build()
+            self.handle_build(args)
         elif command == "load":
             self.handle_load()
         elif command == "print":
@@ -50,8 +49,12 @@ class SearchShell:
             self.print_help()
         return True
 
-    def handle_build(self) -> None:
-        crawler = SiteCrawler(self.site_url, max_pages=DEFAULT_MAX_PAGES)
+    def handle_build(self, args: list[str]) -> None:
+        max_pages = self._parse_build_limit(args)
+        if args and max_pages is None:
+            return
+
+        crawler = SiteCrawler(self.site_url, max_pages=max_pages)
         result = crawler.crawl()
         if not result.pages:
             print("Build failed: no pages were crawled.")
@@ -62,11 +65,18 @@ class SearchShell:
             return
         self.index_data = build_index(result.pages)
         save_index(self.index_data, self.index_path)
-        print(
-            "Built index for "
-            f"{result.pages_crawled} pages "
-            f"(discovered {result.pages_discovered} unique URLs, limit {DEFAULT_MAX_PAGES})."
-        )
+        if max_pages is None:
+            print(
+                "Built index for "
+                f"{result.pages_crawled} pages "
+                f"(discovered {result.pages_discovered} unique URLs, full-site crawl)."
+            )
+        else:
+            print(
+                "Built index for "
+                f"{result.pages_crawled} pages "
+                f"(discovered {result.pages_discovered} unique URLs, limit {max_pages})."
+            )
         print(f"Saved index to {self.index_path}.")
         if result.errors:
             print("Some pages could not be fetched:")
@@ -119,8 +129,25 @@ class SearchShell:
         return True
 
     @staticmethod
+    def _parse_build_limit(args: list[str]) -> int | None:
+        if not args:
+            return None
+        if len(args) > 1:
+            print("Usage: build [max_pages]")
+            return None
+        try:
+            max_pages = int(args[0])
+        except ValueError:
+            print("Usage: build [max_pages]")
+            return None
+        if max_pages <= 0:
+            print("Build page limit must be a positive integer.")
+            return None
+        return max_pages
+
+    @staticmethod
     def print_help() -> None:
-        print('Commands: build, load, print <word>, find <query>, find "exact phrase", help, exit')
+        print('Commands: build [max_pages], load, print <word>, find <query>, find "exact phrase", help, exit')
 
 
 def main(argv: list[str] | None = None) -> int:

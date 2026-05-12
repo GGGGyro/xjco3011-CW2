@@ -25,7 +25,7 @@ data/
 
 - Crawl pages starting from `https://quotes.toscrape.com/`
 - Respect a 6-second politeness window between requests
-- Limit a build run to the first 25 crawled pages to keep demonstrations predictable
+- Crawl the full site by default, with an optional page limit for local debugging
 - Build an inverted index containing word frequency and positions per page
 - Save the index to `data/quotes_index.json`
 - Load a previously saved index
@@ -47,6 +47,7 @@ Then use the required commands:
 
 ```text
 build
+build 10
 load
 print nonsense
 find good friends
@@ -59,6 +60,7 @@ You can also run one command directly:
 
 ```bash
 python -m src.main build
+python -m src.main build 10
 python -m src.main load
 python -m src.main print nonsense
 python -m src.main find good friends
@@ -79,3 +81,4 @@ python -m unittest discover -s tests -v
 - For a stronger final submission, you can later replace or extend the crawler with `requests` and `BeautifulSoup` as recommended in the brief.
 - Search results are ranked with a simple TF-IDF style score based on term frequency, page length, and document frequency.
 - The crawler now reports how many pages were crawled, how many unique URLs were discovered, and any structured network errors.
+- The optional `build [max_pages]` form is intended only for local testing; the default `build` command crawls the full reachable site.
