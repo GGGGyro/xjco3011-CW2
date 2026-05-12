@@ -48,7 +48,6 @@ Then use the required commands:
 
 ```text
 build
-build 10
 load
 print nonsense
 find good friends
@@ -61,12 +60,28 @@ You can also run one command directly:
 
 ```bash
 python -m src.main build
-python -m src.main build 10
 python -m src.main load
 python -m src.main print nonsense
 python -m src.main find good friends
 python -m src.main find "\"good friends\""
 ```
+
+## Local debugging
+
+If you want a faster local crawl while testing, you can temporarily cap the number of crawled pages:
+
+```bash
+python -m src.main build 10
+```
+
+Use this only for local debugging. For coursework demonstrations and final outputs, the default `build` command should be used so the reachable site is crawled in full.
+
+## Design notes
+
+- The inverted index stores both term frequency and token positions so the same structure can support `print`, ranked keyword search, and exact phrase matching.
+- Keyword results are ranked with a TF-IDF style score that combines per-page term frequency, page length, and document frequency.
+- Exact phrase queries are detected with double quotes and matched using adjacent token positions in the postings lists.
+- The crawler restricts traversal to the target domain, removes fragment identifiers, and applies a 6-second politeness delay between requests.
 
 ## Testing
 

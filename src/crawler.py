@@ -64,6 +64,14 @@ class Crawler:
 
     def crawl(self) -> CrawlResult:
         """Crawl all reachable in-domain pages starting from base_url."""
+        return self._crawl_pages(self.fetch_page, self.extract_links_from_page)
+
+    def _crawl_pages(
+        self,
+        page_loader: Callable[[str], PageContent],
+        link_loader: Callable[[PageContent], list[str]],
+    ) -> CrawlResult:
+        """Shared crawl loop used by both the base crawler and the site crawler."""
         queue: deque[str] = deque([self.base_url])
         visited: set[str] = set()
         pages: list[PageContent] = []
@@ -78,14 +86,14 @@ class Crawler:
             visited.add(url)
 
             try:
-                page = self.fetch_page(url)
+                page = page_loader(url)
             except (RequestException, ValueError) as exc:
                 errors.append(self.format_error(url, exc))
                 continue
 
             pages.append(page)
 
-            for raw_link in self.extract_links(page.url, page.text):
+            for raw_link in link_loader(page):
                 normalised = self.normalise_url(page.url, raw_link)
                 if normalised and normalised not in self._discovered_urls:
                     self._discovered_urls.add(normalised)
@@ -122,6 +130,10 @@ class Crawler:
         del current_url
         del text
         return []
+
+    def extract_links_from_page(self, page: PageContent) -> list[str]:
+        """Load outgoing links for a page after it has been fetched."""
+        return self.extract_links(page.url, page.text)
 
     def parse_html(self, html: str) -> tuple[str, str, list[str]]:
         """Parse HTML into title, text, and links."""
@@ -171,36 +183,13 @@ class SiteCrawler(Crawler):
     """Concrete crawler that follows in-domain links parsed from HTML."""
 
     def crawl(self) -> CrawlResult:
-        queue: deque[str] = deque([self.base_url])
-        visited: set[str] = set()
-        pages: list[PageContent] = []
-        errors: list[str] = []
+        self._page_links: dict[str, list[str]] = {}
+        return self._crawl_pages(self._fetch_site_page, self._extract_site_links)
 
-        while queue:
-            if self.max_pages is not None and len(pages) >= self.max_pages:
-                break
-            url = queue.popleft()
-            if url in visited:
-                continue
-            visited.add(url)
+    def _fetch_site_page(self, url: str) -> PageContent:
+        page, links = self.fetch_page_html(url)
+        self._page_links[page.url] = links
+        return page
 
-            try:
-                page, links = self.fetch_page_html(url)
-            except (RequestException, ValueError) as exc:
-                errors.append(self.format_error(url, exc))
-                continue
-
-            pages.append(page)
-
-            for raw_link in links:
-                normalised = self.normalise_url(page.url, raw_link)
-                if normalised and normalised not in self._discovered_urls:
-                    self._discovered_urls.add(normalised)
-                    queue.append(normalised)
-
-        return CrawlResult(
-            pages=pages,
-            errors=errors,
-            pages_crawled=len(pages),
-            pages_discovered=len(self._discovered_urls),
-        )
+    def _extract_site_links(self, page: PageContent) -> list[str]:
+        return self._page_links.get(page.url, [])
